@@ -172,7 +172,7 @@ class DatabaseService {
     
     try {
       final result = await _servicesCollection!.deleteOne(where.eq('_id', id));
-      final deleted = result.nRemoved ?? 0;
+      final deleted = result.nRemoved;
       return deleted > 0;
     } catch (e) {
       print('Error deleting service: $e');

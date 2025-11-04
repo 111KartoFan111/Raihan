@@ -32,12 +32,6 @@ class BottomNav extends StatelessWidget {
                 onTap: () => _navigate(context, 1, '/map'),
               ),
               _NavItem(
-                icon: Icons.chat_bubble_outline,
-                label: 'AI Чат',
-                isActive: currentIndex == 2,
-                onTap: () => _navigate(context, 2, '/chat'),
-              ),
-              _NavItem(
                 icon: Icons.gavel_outlined,
                 label: 'Законы',
                 isActive: currentIndex == 3,

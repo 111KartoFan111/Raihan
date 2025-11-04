@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 import '../widgets/bottom_nav.dart';
+import '../services/auth_service.dart';
+import '../services/settings_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,16 +29,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _sendSOS() async {
     setState(() => _sending = true);
     try {
-      final pos = await _getLocation();
+      // Haptic feedback if enabled
+      if (SettingsService.sosVibration.value) {
+        await HapticFeedback.heavyImpact();
+      }
+
+      final includeLocation = SettingsService.autoLocationSharing.value;
+      final pos = includeLocation ? await _getLocation() : null;
       final lat = pos?.latitude;
       final lng = pos?.longitude;
       final mapsLink = (lat != null && lng != null)
           ? 'https://maps.google.com/?q=$lat,$lng'
-          : 'Location unavailable';
+          : (includeLocation ? 'Location unavailable' : 'Location disabled');
 
       final message = Uri.encodeComponent('SOS: I need help. My location: $mapsLink');
 
-      // This opens the SMS composer; replace with saved contacts when profile is implemented.
       final smsUri = Uri.parse('sms:?body=$message');
       if (await canLaunchUrl(smsUri)) {
         await launchUrl(smsUri);
@@ -43,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS triggered (prototype).')), 
+        const SnackBar(content: Text('SOS sent')), 
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -98,19 +106,19 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const Text(
-              'Экстренный SOS',
-              style: TextStyle(
+            Text(
+              AppLocalizations.of(context).t('sos_title'),
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF030213),
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Нажмите и удерживайте, чтобы отправить ваше местоположение экстренным контактам',
+            Text(
+              AppLocalizations.of(context).t('sos_hint'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: Color(0xFF717182),
               ),
@@ -157,30 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 64),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0x80ECECF0),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Ваши экстренные контакты:',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF030213),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _contactItem('1. Иван Петров (Брат) - +7 (777) 123-4567'),
-                  _contactItem('2. Анна Смирнова (Друг) - +7 (777) 987-6543'),
-                  _contactItem('3. Мама - +7 (777) 456-7890'),
-                ],
-              ),
-            ),
+            _contactsSection(),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -197,10 +182,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Color(0xFF717182),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Ваше местоположение будет автоматически отправлено при активации SOS.',
-                      style: TextStyle(
+                      AppLocalizations.of(context).t('info_location'),
+                      style: const TextStyle(
                         fontSize: 14,
                         color: Color(0xFF717182),
                       ),
@@ -216,16 +201,81 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _contactItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 14,
-          color: Color(0xFF030213),
+  Widget _contactsSection() {
+    return FutureBuilder(
+      future: AuthService.getContacts(),
+      builder: (context, snapshot) {
+        final contacts = (snapshot.data as List?) ?? [];
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0x80ECECF0),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                AppLocalizations.of(context).t('your_contacts'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF030213),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (contacts.isEmpty) ...[
+                Text(
+                  AppLocalizations.of(context).t('no_contacts'),
+                  style: const TextStyle(fontSize: 14, color: Color(0xFF717182)),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => Navigator.pushNamed(context, '/profile'),
+                  child: Text(AppLocalizations.of(context).t('add_contacts')),
+                ),
+              ] else ...[
+                for (int i = 0; i < contacts.length; i++) ...[
+                  _contactRow(index: i + 1, name: contacts[i].name, phone: contacts[i].phone, relationship: contacts[i].relationship),
+                  if (i != contacts.length - 1) const SizedBox(height: 8),
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _contactRow({required int index, required String name, required String phone, required String relationship}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$index. $name (${relationship.isNotEmpty ? relationship : 'Контакт'}) - $phone',
+            style: const TextStyle(fontSize: 14, color: Color(0xFF030213)),
+          ),
         ),
-      ),
+        IconButton(
+          icon: const Icon(Icons.phone, size: 18, color: Color(0xFF030213)),
+          onPressed: () async {
+            final uri = Uri.parse('tel:$phone');
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri);
+            }
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.sms, size: 18, color: Color(0xFF030213)),
+          onPressed: () async {
+            final msg = Uri.encodeComponent('SOS: I need help');
+            final uri = Uri.parse('sms:$phone?body=$msg');
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri);
+            }
+          },
+        ),
+      ],
     );
   }
 }
