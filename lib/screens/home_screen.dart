@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../widgets/bottom_nav.dart';
 import '../services/auth_service.dart';
 import '../services/settings_service.dart';
+import '../l10n/app_localizations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
